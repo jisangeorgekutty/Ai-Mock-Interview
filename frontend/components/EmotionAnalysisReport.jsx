@@ -1,13 +1,12 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { db } from "@/utils/db";
-import { EmotionFeedback, Emotions } from "@/utils/schema";
-import { useAuthStore } from "@/store/useAuthStore";
 import { PieChart, Pie, Cell, Legend, Tooltip } from "recharts";
-import { eq, and } from "drizzle-orm";
-import { chatSession } from '@/utils/GeminiAI';
+import { useAuthStore } from "@/store/useAuthStore";
+import { chatSession } from "@/utils/GeminiAI";
+import { useEmotionsStore } from "@/store/useEmotionStore";
+import { useEmotionFeedbackStore } from "@/store/useEmotionFeedbackStore";
 
-const EmotionReport = ({ averages, dominantEmotion, maxPercentage, trends }) => {
+const EmotionReport = ({ averages, dominantEmotion, maxPercentage }) => {
   const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042"];
 
   const pieData = Object.entries(averages).map(([emotion, percentage]) => ({
@@ -19,7 +18,6 @@ const EmotionReport = ({ averages, dominantEmotion, maxPercentage, trends }) => 
     <div className="max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-lg">
       <h2 className="text-2xl font-bold text-center text-gray-800 mb-4">Emotion Analysis Report</h2>
 
-      {/* Average Emotions */}
       <div className="flex flex-col items-center space-y-6">
         <h3 className="text-xl font-semibold text-gray-700">Average Emotions</h3>
         <div className="w-full flex justify-center">
@@ -43,7 +41,6 @@ const EmotionReport = ({ averages, dominantEmotion, maxPercentage, trends }) => 
         </div>
       </div>
 
-      {/* Dominant Emotion */}
       <div className="mt-6 p-4 bg-gray-100 rounded-lg text-center">
         <h3 className="text-lg font-semibold text-gray-700">Dominant Emotion</h3>
         <p className="text-gray-600 text-lg mt-2">
@@ -52,195 +49,113 @@ const EmotionReport = ({ averages, dominantEmotion, maxPercentage, trends }) => 
           <strong className="text-indigo-600">{(maxPercentage * 100).toFixed(2)}%</strong>.
         </p>
       </div>
-
-      {/* Emotion Trends */}
-      {/* <div className="mt-6">
-        <h3 className="text-xl font-semibold text-gray-700 mb-3">Emotion Trends</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse border border-gray-200 rounded-lg">
-            <thead>
-              <tr className="bg-gray-100 text-gray-700">
-                <th className="border border-gray-200 px-4 py-2">Time</th>
-                <th className="border border-gray-200 px-4 py-2">Emotions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {trends.map((trend, index) => (
-                <tr key={index} className="border-b border-gray-200 text-gray-600">
-                  <td className="border border-gray-200 px-4 py-2 text-sm">
-                    {trend.time instanceof Date ? trend.time.toLocaleString() : trend.time}
-                  </td>
-                  <td className="border border-gray-200 px-4 py-2">
-                    <ul className="space-y-1">
-                      {Object.entries(trend.emotions).map(([emotion, percentage]) => (
-                        <li key={emotion} className="text-sm">
-                          <span className="font-medium text-gray-800">{emotion}:</span> {percentage}%
-                        </li>
-                      ))}
-                    </ul>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div> */}
-
     </div>
   );
 };
 
-
 const EmotionAnalysisReport = ({ mockId }) => {
   const { authUser } = useAuthStore();
-  const user = authUser;
+  const { fetchEmotions, emotions } = useEmotionsStore();
+  const { fetchFeedbackByMockId, submitFeedback, feedbacks } = useEmotionFeedbackStore();
+
   const [reportData, setReportData] = useState(null);
-  const [dominantEmo, setDominantEmo] = useState("");
-  const [emotionPercentage, setEmotionPersentage] = useState(null);
+  const [loading, setLoading] = useState(true);
   const feedbackGenerated = useRef(false);
 
-  //  Fetch emotion data from DB based on userId & mockIdRef
-  const getEmotionData = async () => {
-    if (!user || !user?._id || !mockId) {
-      console.warn("User ID or mockId is missing. Skipping fetch.");
-      return [];
-    }
-
-    try {
-      const data = await db
-        .select()
-        .from(Emotions)
-        .where(and(eq(Emotions.userId, user?._id), eq(Emotions.mockIdRef, mockId)));
-
-      console.log("Fetched emotion data:", data);
-      return data;
-    } catch (error) {
-      console.error("Error fetching emotion data:", error);
-      return [];
-    }
-  };
-
-  //  Calculate average emotion percentages
-  const calculateAverages = (emotionData) => {
-    if (emotionData.length === 0) return {};
-
-    const emotionSums = {};
-    const emotionCounts = {};
-
-    emotionData.forEach(({ emotion, percentage }) => {
-      if (!emotionSums[emotion]) {
-        emotionSums[emotion] = 0;
-        emotionCounts[emotion] = 0;
+  const calculateAverages = (data) => {
+    const sum = {}, count = {};
+    data.forEach(({ emotion, percentage }) => {
+      if (!sum[emotion]) {
+        sum[emotion] = 0;
+        count[emotion] = 0;
       }
-
-      emotionSums[emotion] += parseFloat(percentage);
-      emotionCounts[emotion]++;
+      sum[emotion] += parseFloat(percentage);
+      count[emotion]++;
     });
 
     const averages = {};
-    for (const [emotion, sum] of Object.entries(emotionSums)) {
-      averages[emotion] = sum / emotionCounts[emotion];
+    for (const emotion in sum) {
+      averages[emotion] = sum[emotion] / count[emotion];
     }
-
     return averages;
   };
 
-  //  Determine the dominant emotion
   const calculateDominantEmotion = (averages) => {
-    let dominantEmotion = "";
-    let maxPercentage = 0;
-
+    let dominantEmotion = "", maxPercentage = 0;
     for (const [emotion, percentage] of Object.entries(averages)) {
       if (percentage > maxPercentage) {
         dominantEmotion = emotion;
         maxPercentage = percentage;
       }
     }
-    setEmotionPersentage(maxPercentage * 100)
-    setDominantEmo(dominantEmotion)
     return { dominantEmotion, maxPercentage };
   };
 
-  const emotionFeedback = async () => {
+  const handleEmotionFeedback = async (dominantEmotion, maxPercentage) => {
     if (feedbackGenerated.current) return;
     feedbackGenerated.current = true;
 
-    const existingFeedback = await db.select()
-      .from(EmotionFeedback)
-      .where(eq(EmotionFeedback.mockIdRef, mockId));
+    await fetchFeedbackByMockId(mockId);
+    const existingFeedback = feedbacks.find(fb => fb.mockIdRef === mockId);
+    if (existingFeedback) return;
 
-    if (existingFeedback.length === 0) {
-      const emotionPromt = "Based on the interview performance, the user's dominant emotion was " + dominantEmo + " with a confidence level of " + emotionPercentage + ".Please analyze the user's confidence level and provide two actionable suggestions to help them improve their confidence in future interviews, give it in 1 line.it should in JSON format with two field suggection1 and suggection2 field"
-      const result = await chatSession.sendMessage(emotionPromt);
-      console.log(result.response.text())
-      const emotionFeedback = JSON.parse(result.response.text());
+    const prompt = `Based on the interview performance, the user's dominant emotion was ${dominantEmotion} with a confidence level of ${(maxPercentage * 100).toFixed(2)}%. Please analyze the user's confidence level and provide two actionable suggestions to help them improve their confidence. Return response in JSON format with suggestion1 and suggestion2.`;
 
-      const success = await db.insert(EmotionFeedback)
-        .values({
-          mockIdRef: mockId,
-          emotionFeedback: emotionFeedback,
-        });
-      // if (success) {
-      //   alert("Emotion FeedBack Inserted")
-      // } else {
-      //   alert("Emotion feedback error")
-      // }
+    try {
+      const result = await chatSession.sendMessage(prompt);
+      const feedbackJson = JSON.parse(await result.response.text());
+      await submitFeedback({ mockIdRef: mockId, emotionFeedback: feedbackJson });
+    } catch (error) {
+      console.error("Failed to generate or submit emotion feedback:", error);
     }
-    if (existingFeedback) {
-      const againEmotionPromt = "Based on the interview performance, the user's dominant emotion was " + dominantEmo + " with a confidence level of " + emotionPercentage + "Please analyze the user's confidence level and provide two new actionable suggestions to help them improve their confidence.it should in JSON format with two field suggection1 and suggection2 field"
-      const updateResult = await chatSession.sendMessage(againEmotionPromt);
-      const emotionFeedback = JSON.parse(updateResult.response.text());
-
-      // Update existing record in the database
-      const updateSuccess = await db.update(EmotionFeedback)
-        .set({
-          emotionFeedback: JSON.stringify(emotionFeedback),
-        })
-        .where(eq(EmotionFeedback.mockIdRef, mockId));
-
-      // if (updateSuccess) {
-      //   alert("Emotion Feedback Updated");
-      // } else {
-      //   alert("Error updating emotion feedback");
-      // }
-    }
-  }
-
-  //  Track emotion trends over time
-  const calculateEmotionTrends = (emotionData) => {
-    return emotionData.map(({ timestamp, emotion, percentage }, index) => ({
-      time: timestamp ? new Date(timestamp).toLocaleString() : `Interval ${index + 1}`,
-      emotions: { [emotion]: parseFloat(percentage) },
-    }));
   };
 
-  const handleGenerateReport = async () => {
-    console.log("Generating report...");
-    const emotionData = await getEmotionData();
+  const generateReport = async () => {
+    console.log("Calling fetchEmotions with mockId:", mockId);
+    await fetchEmotions(mockId);
+    console.log("Fetched emotions:", emotions);
 
-    console.log("HEAVY DATA", emotionData)
-
-    if (!emotionData.length) {
-      console.warn("No emotion data found.");
+    if (!emotions.length) {
+      console.warn("No emotions found for this mock interview.");
+      setLoading(false);
       return;
     }
 
-    const averages = calculateAverages(emotionData);
+    const averages = calculateAverages(emotions);
     const { dominantEmotion, maxPercentage } = calculateDominantEmotion(averages);
-    const trends = calculateEmotionTrends(emotionData);
+    setReportData({ averages, dominantEmotion, maxPercentage });
 
-    setReportData({ averages, dominantEmotion, maxPercentage, trends });
-    emotionFeedback();
+    await handleEmotionFeedback(dominantEmotion, maxPercentage);
+    setLoading(false);
   };
 
   useEffect(() => {
-    if (user && mockId) {
-      handleGenerateReport();
+    console.log("authUser:", authUser);
+    console.log("mockId:", mockId);
+
+    if (authUser && mockId) {
+      console.log("Generating report...");
+      generateReport();
+    } else {
+      setLoading(false);
+      console.warn("authUser or mockId is missing.");
     }
-  }, [user, mockId]);
+  }, [authUser, mockId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64 text-gray-500">
+        Generating emotion analysis report...
+      </div>
+    );
+  }
 
   if (!reportData) {
-    return <div>Loading report...</div>;
+    return (
+      <div className="flex items-center justify-center h-64 text-red-500 text-center px-4">
+        No emotion data found for this mock interview.
+      </div>
+    );
   }
 
   return <EmotionReport {...reportData} />;
