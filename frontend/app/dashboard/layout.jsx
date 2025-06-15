@@ -1,7 +1,14 @@
-import React from 'react'
+import React,{ useEffect } from 'react'
 import Header from './_components/Header'
+import { useAuthStore } from '@/store/useAuthStore'
 
 function DashboardLayout({children}) {
+  const { checkAuth } = useAuthStore();
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
   return (
     <div>
       <Header/>
