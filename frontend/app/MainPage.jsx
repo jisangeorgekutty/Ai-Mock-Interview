@@ -1,7 +1,7 @@
 "use client"
 import React, { useEffect } from 'react'
 import Image from 'next/image';
-import { usePathname,useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { ArrowRightIcon } from "@heroicons/react/24/solid";
 import { useAuthStore } from '@/store/useAuthStore';
 
@@ -10,9 +10,9 @@ function MainPage() {
     const path = usePathname();
     const router = useRouter();
     const { checkAuth, authUser, isCheckingAuth } = useAuthStore();
+
     useEffect(() => {
         checkAuth();
-        console.log(path)
     }, [checkAuth]);
 
     const handleUpgrade = () => {
@@ -21,18 +21,18 @@ function MainPage() {
     const handleWork = () => {
         router.push('/work');
     };
-    const handleDashboard=()=>{
-        if(authUser){
-        router.push('/dashboard')
+    const handleDashboard = () => {
+        if (authUser) {
+            router.push('/dashboard')
         }
         router.push('sign-up');
     }
 
-    const handleGetStarted=()=>{
-        if(!authUser){
-        router.push('/sign-up');
+    const handleGetStarted = () => {
+        if (!authUser) {
+            router.push('/sign-up');
         }
-        if(authUser){
+        if (authUser) {
             // console.log("AuthUser",authUser)
             router.push('/dashboard');
         }
@@ -44,7 +44,7 @@ function MainPage() {
             <img loading="lazy" width="1200" height="300" decoding="async" data-nimg="1" className="absolute z-[-10] w-full" style={{ color: "transparent" }} src="/grid.svg"></img>
             <div className='flex items-center justify-between p-6 bg-secondary shadow-sm'>
                 <button onClick={handleDashboard}>
-                <Image src={'/mainlogo3.png'} width={160} height={100} alt='logo' />
+                    <Image src={'/mainlogo3.png'} width={160} height={100} alt='logo' />
                 </button>
                 <nav>
                     <ul className='hidden md:flex items-center gap-5'>
