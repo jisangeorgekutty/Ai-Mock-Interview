@@ -6,24 +6,20 @@ import Webcam from 'react-webcam';
 import useSpeechToText from 'react-hook-speech-to-text';
 import { Mic } from 'lucide-react';
 import { chatSession } from '@/utils/GeminiAI';
-import { db } from '@/utils/db';
-import { UserAnswer } from '@/utils/schema';
 import { useAuthStore } from '@/store/useAuthStore';
-import moment from 'moment';
 import { toast } from 'sonner';
-import { eq, and } from "drizzle-orm";
 import EmotionAnalysis from '@/components/EmotionAnalysis';
+import { useUserAnswerStore } from '@/store/useUserAnswerStore';
+import moment from 'moment';
 
 function RecordAnswerSection({ mockInterviewQuestion, activeIndexQuestion, interviewData, interviewEnded }) {
   const [userAnswer, setUserAnswer] = useState("");
-  const userAnswerRef = useRef(""); //  Track latest answer reliably
+  const userAnswerRef = useRef("");
   const { authUser } = useAuthStore();
-  const user = authUser;
+  const submitAnswer = useUserAnswerStore((state) => state.submitAnswer);
   const [loading, setLoading] = useState(false);
 
   const {
-    error,
-    interimResult,
     isRecording,
     results,
     startSpeechToText,
@@ -34,16 +30,14 @@ function RecordAnswerSection({ mockInterviewQuestion, activeIndexQuestion, inter
     useLegacyResults: false
   });
 
-  //  Ensure userAnswer updates correctly
   useEffect(() => {
     if (results.length > 0) {
       const fullTranscript = results.map(result => result.transcript).join(' ');
       setUserAnswer(fullTranscript);
-      userAnswerRef.current = fullTranscript; // ✅ Keep reference updated
+      userAnswerRef.current = fullTranscript;
     }
   }, [results]);
 
-  //  Manually stop recording & save answer
   const handleStopRecording = async () => {
     try {
       stopSpeechToText();
@@ -54,11 +48,9 @@ function RecordAnswerSection({ mockInterviewQuestion, activeIndexQuestion, inter
       }
     } catch (err) {
       toast.error(`Recording error: ${err.message}`);
-      console.error("Recording error:", err);
     }
   };
 
-  //  Start or Stop Recording
   const StartStopRecording = async () => {
     try {
       if (isRecording) {
@@ -68,64 +60,40 @@ function RecordAnswerSection({ mockInterviewQuestion, activeIndexQuestion, inter
       }
     } catch (err) {
       toast.error(`Recording error: ${err.message}`);
-      console.error("Recording error:", err);
     }
   };
 
-  //  Save Answer & Get AI Feedback
   const UpdateUserAnswer = async () => {
     setLoading(true);
     try {
       const currentQuestion = mockInterviewQuestion[activeIndexQuestion]?.question;
+      const correctAnswer = mockInterviewQuestion[activeIndexQuestion]?.answer;
+
       const feedbackPrompt = `Question: ${currentQuestion}, User Answer: ${userAnswerRef.current}. 
         Based on the question and user response, rate the answer and provide feedback in 3-5 lines. 
         Respond in JSON format with fields: "rating" and "feedback".`;
 
-      //  Ensure AI Response is Properly Handled
       const result = await chatSession.sendMessage(feedbackPrompt);
       const responseText = await result.response.text();
-      const cleanedResponse = responseText.replace(/```json|```/g, ''); //  Remove unwanted JSON markers
-      const jsonFeedbackResp = JSON.parse(cleanedResponse);
+      const cleaned = responseText.replace(/```json|```/g, '');
+      const feedbackJSON = JSON.parse(cleaned);
 
-      //  Check if Answer Already Exists
-      const existingRecord = await db.query.UserAnswer.findFirst({
-        where: and(
-          eq(UserAnswer.mockIdRef, interviewData?.mockId),
-          eq(UserAnswer.question, currentQuestion),
-          eq(UserAnswer.userEmail, user?.email)
-        )
+      await submitAnswer({
+        mockIdRef: interviewData?.mockId,
+        question: currentQuestion,
+        correctAns: correctAnswer,
+        userAns: userAnswerRef.current,
+        feedback: feedbackJSON.feedback,
+        rating: feedbackJSON.rating,
+        userEmail: authUser?.email,
+        createdAt: moment().format('DD-MM-YYYY')
       });
 
-      //  Use Upsert (Insert or Update)
-      if (existingRecord) {
-        await db.update(UserAnswer)
-          .set({
-            userAns: userAnswerRef.current,
-            feedback: jsonFeedbackResp?.feedback,
-            rating: jsonFeedbackResp?.rating,
-            createdAt: moment().format('DD-MM-yyyy')
-          })
-          .where(eq(UserAnswer.id, existingRecord.id));
-      } else {
-        await db.insert(UserAnswer)
-          .values({
-            mockIdRef: interviewData?.mockId,
-            question: currentQuestion,
-            correctAns: mockInterviewQuestion[activeIndexQuestion]?.answer,
-            userAns: userAnswerRef.current,
-            feedback: jsonFeedbackResp?.feedback,
-            rating: jsonFeedbackResp?.rating,
-            userEmail: user?.email,
-            createdAt: moment().format('DD-MM-yyyy')
-          });
-      }
-
-      toast.success("Your Answer Recorded Successfully");
       setUserAnswer('');
       setResults([]);
     } catch (error) {
-      console.error("Error updating user answer:", error);
-      toast.error("Failed to save answer.");
+      console.error("Save answer error:", error);
+      toast.error("Failed to save answer");
     } finally {
       setLoading(false);
     }
@@ -148,7 +116,7 @@ function RecordAnswerSection({ mockInterviewQuestion, activeIndexQuestion, inter
         )}
       </Button>
 
-      {/* <Button onClick={() => console.log(userAnswerRef.current)}>Show Answer</Button> */}
+      {/* <div className="text-center text-sm text-gray-500">{userAnswer}</div> */}
     </div>
   );
 }
