@@ -1,69 +1,59 @@
 "use client";
-import { db } from '@/utils/db';
-import { MockInterview, EmotionFeedback } from '@/utils/schema';
-import { eq } from 'drizzle-orm';
+
 import React, { useEffect, useState } from 'react';
 import QuestionSection from './_components/QuestionSection';
 import RecordAnswerSection from './_components/RecordAnswerSection';
 import { Button } from '@/components/ui/button';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
+import { useMockInterviewStore } from '@/store/useMockInterviewStore';
 
-function StartInterview({ params }) {
-    const { interviewId } = React.use(params);
+function StartInterview() {
+    const { interviewId } = useParams;
+
     const [interviewData, setInterviewData] = useState(null);
-    const [mockInterviewQuestion, setMockInterviewQuestion] = useState(null);
+    const [mockInterviewQuestion, setMockInterviewQuestion] = useState([]);
     const [activeIndexQuestion, setActiveIndexQuestion] = useState(0);
     const [interviewEnded, setInterviewEnded] = useState(false);
-    const [loadingEnd, setLoadingEnd] = useState(false);  //  Track interview end status
+    const [loadingEnd, setLoadingEnd] = useState(false);
+
     const router = useRouter();
+    const { getMockInterviewById } = useMockInterviewStore();
 
     useEffect(() => {
-        GetInterviewDetails();
-    }, []);
+        if (interviewId) {
+            getInterviewDetails();
+        }
+    }, [interviewId]);
 
-    const GetInterviewDetails = async () => {
-        const result = await db.select().from(MockInterview)
-            .where(eq(MockInterview.mockId, interviewId));
-
-        if (result.length > 0) {
-            const resultData = result[0]?.jsonMockResp;
-            const jsonMockResp = JSON.parse(resultData);
-            setMockInterviewQuestion(jsonMockResp);
-            setInterviewData(result[0]);
+    const getInterviewDetails = async () => {
+        const result = await getMockInterviewById(interviewId);
+        if (result) {
+            setInterviewData(result);
+            try {
+                const parsedResp = JSON.parse(result.jsonMockResp);
+                setMockInterviewQuestion(parsedResp);
+            } catch (err) {
+                console.error("Failed to parse mock response JSON", err);
+            }
         }
     };
 
     const handleEndInterview = async () => {
-        setLoadingEnd(true);  //  Show loading state while saving data
-
+        setLoadingEnd(true);
         try {
-            //  Save Emotion Feedback before navigating
-            const emotionFeedbackData = {
-                suggestion1: "Practice answering common questions confidently.",
-                suggestion2: "Work on maintaining eye contact and clear speech."
-            };
-
-            await db.insert(EmotionFeedback)
-                .values({
-                    mockIdRef: interviewId,
-                    emotionFeedback: JSON.stringify(emotionFeedbackData),
-                });
-
-            console.log(" Emotion Feedback Stored!");
 
             setInterviewEnded(true);
-            setLoadingEnd(false);
-
-            //  Navigate only after Emotion Feedback is saved
             router.push(`/dashboard/interview/${interviewId}/feedback`);
-        } catch (error) {
-            console.error(" Error Ending Interview:", error);
+        } catch (err) {
+            console.error("Error saving emotion feedback", err);
+        } finally {
+            setLoadingEnd(false);
         }
     };
 
     return (
-        <div>
-            <div className='grid grid-cols-1 md:grid-cols-2 gap-10'>
+        <div className="my-10">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                 <QuestionSection
                     mockInterviewQuestion={mockInterviewQuestion}
                     activeIndexQuestion={activeIndexQuestion}
@@ -75,22 +65,23 @@ function StartInterview({ params }) {
                     interviewEnded={interviewEnded}
                 />
             </div>
-            <div className='flex justify-end gap-6'>
-                {activeIndexQuestion > 0 &&
+
+            <div className="flex justify-end gap-6 mt-6">
+                {activeIndexQuestion > 0 && (
                     <Button onClick={() => setActiveIndexQuestion(activeIndexQuestion - 1)}>
                         Previous Question
                     </Button>
-                }
-                {activeIndexQuestion !== mockInterviewQuestion?.length - 1 &&
+                )}
+                {activeIndexQuestion < mockInterviewQuestion?.length - 1 && (
                     <Button onClick={() => setActiveIndexQuestion(activeIndexQuestion + 1)}>
                         Next Question
                     </Button>
-                }
-                {activeIndexQuestion === mockInterviewQuestion?.length - 1 &&
+                )}
+                {activeIndexQuestion === mockInterviewQuestion?.length - 1 && (
                     <Button onClick={handleEndInterview} disabled={loadingEnd}>
                         {loadingEnd ? "Saving & Ending..." : "End Interview"}
                     </Button>
-                }
+                )}
             </div>
         </div>
     );
