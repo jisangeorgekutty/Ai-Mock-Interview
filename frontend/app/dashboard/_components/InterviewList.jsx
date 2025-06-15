@@ -1,29 +1,25 @@
 "use client"
-import { db } from '@/utils/db';
-import { MockInterview } from '@/utils/schema';
-import { desc, eq } from 'drizzle-orm';
+
 import React, { useEffect, useState } from 'react'
 import InterviewItemCard from './InterviewItemCard';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useMockInterviewStore } from '@/store/useMockInterviewStore';
 
 function InterviewList() {
     const { authUser } = useAuthStore();
-    const user = authUser;
+    const { fetchInterviews, interviews } = useMockInterviewStore();
 
     const [interviewList, setInterviewList] = useState([]);
 
-    // user information availbale then the useEffect will work
     useEffect(() => {
-        user && getInterviewList();
-    }, [user])
+        if (authUser) {
+            fetchInterviews(authUser.email);
+        }
+    }, [authUser]);
 
-    const getInterviewList = async () => {
-        const result = await db.select()
-            .from(MockInterview)
-            .where(eq(MockInterview.createdBy, user?.email))
-            .orderBy(desc(MockInterview.id));
-        setInterviewList(result);
-    }
+    useEffect(() => {
+        setInterviewList(interviews);
+    }, [interviews]);
 
     return (
         <div className='mt-10'>
@@ -32,11 +28,12 @@ function InterviewList() {
                 {interviewList && interviewList.map((interview, index) => (
                     <InterviewItemCard
                         interviewItemData={interview}
-                        key={index} />
+                        key={interview._id || index}
+                    />
                 ))}
             </div>
         </div>
     )
 }
 
-export default InterviewList
+export default InterviewList;
